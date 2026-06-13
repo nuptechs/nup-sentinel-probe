@@ -1,0 +1,24 @@
+#!/bin/bash
+# ══════════════════════════════════════════════════════════════
+# PRE-PUSH HOOK — validação rápida local do que mudou antes do push.
+# Semente do loop self-healing (ADR-044): delega para
+# scripts/dev/validate-changed.sh (contrato exit 0/1 + saída legível).
+#
+# Pular:
+#   git push --no-verify        → pula o hook inteiro
+#   SKIP_VALIDATE=1 git push    → pula só a validação
+# ══════════════════════════════════════════════════════════════
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if [ "${SKIP_VALIDATE:-}" = "1" ]; then
+  echo "⏭️  SKIP_VALIDATE=1 — pulando validação local."
+  exit 0
+fi
+
+if [ -x "$REPO_ROOT/scripts/dev/validate-changed.sh" ]; then
+  "$REPO_ROOT/scripts/dev/validate-changed.sh"
+  exit $?
+fi
+
+exit 0
