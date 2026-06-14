@@ -9,6 +9,8 @@
 
 **Probe** instruments your application at every layer — browser, network, server, database — and correlates events into a unified timeline. When a bug happens, you get a complete picture: what the user clicked, what HTTP requests fired, what the server logged, what DB queries ran, and how they all connect.
 
+> **Estado real das capacidades:** este README descreve o que as bibliotecas *podem* fazer. Para o que de fato está ligado ponta-a-ponta (✅), o que existe mas não recebe dados na integração com o easynup (🟡) e o que é stub (⚪) — incluindo a limitação importante de que a extração de campos (`observed-fields`/`runtime-hits`) fica **cega no easynup hoje porque o corpo da requisição não é enviado** — veja **[docs/CAPABILITIES.md](docs/CAPABILITIES.md)**.
+
 ## Architecture
 
 > For detailed design decisions, data flow, and security model, see [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -349,4 +351,5 @@ MIT
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design, Port/Adapter pattern, data flow, security model |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, testing, code conventions, CI/CD |
 | [docs/API.md](docs/API.md) | Complete REST and WebSocket API reference |
+| [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | **Catálogo de capacidades com status honesto (✅/🟡/⚪) + evidência arquivo:linha — fonte de verdade do que está ligado** |
 | [CHANGELOG.md](CHANGELOG.md) | Release history and notable changes |
