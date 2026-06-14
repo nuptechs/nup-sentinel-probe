@@ -1,6 +1,8 @@
 # API Reference
 
 > Complete HTTP and WebSocket API specification for `@nuptechs-sentinel-probe/server`.
+>
+> **Endpoints de derivação não listados abaixo:** o servidor também expõe `GET /api/sessions/:id/observed-fields` (`server/src/routes/events.ts:137`) e `GET /api/sessions/:id/runtime-hits` (`:181`), que agregam campos e rotas a partir dos eventos. **Eles só produzem dado se a sessão tiver eventos `source:'network'` com `type:'request'/'response'` e `body` no topo** — qualquer outro emissor (incl. o SDK `source:'sdk'` e a integração atual do easynup) os deixa vazios. Detalhes e estado real em **[CAPABILITIES.md](CAPABILITIES.md)**.
 
 **Base URL:** `http://localhost:7070`
 

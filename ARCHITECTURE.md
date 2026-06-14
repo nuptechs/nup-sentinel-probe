@@ -1,6 +1,8 @@
 # Architecture
 
 > Design decisions, data flow, and system internals for Probe.
+>
+> **Nota de fidelidade:** este documento descreve o desenho. Para o estado *real* de cada capacidade (o que está ligado ✅, o que existe mas não recebe dados 🟡, o que é stub ⚪) e, em particular, por que a extração de campos (`observed-fields`/`runtime-hits`) fica vazia na integração com o easynup — o corpo da requisição não é enviado e o `source` emitido não é `network` — veja **[docs/CAPABILITIES.md](docs/CAPABILITIES.md)**.
 
 ## System Overview
 
