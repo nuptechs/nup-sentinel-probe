@@ -37,8 +37,10 @@ O Probe **sabe** capturar corpo de requisição/resposta e SQL (✅ nas libs). O
 | Contexto via AsyncLocalStorage (request/correlation id) | ✅ | `packages/sdk/src/node/context.ts` (export em `node/index.ts:18`) |
 | Interceptor de SQL Postgres (`pg.Pool.query`) — query, params, duração, rowCount, erro | ✅ na lib | `packages/sdk/src/node/db-interceptor.ts:36-78` |
 | Redação de params sensíveis (JWT, cartão, SSN + regex custom anti-ReDoS) | ✅ | `db-interceptor.ts:155-196` |
-| Interceptores MySQL / MongoDB / Redis | ✅ na lib | `node/index.ts:11-15` (`wrapMysqlPool`/`wrapMongoClient`/`wrapRedisClient`) |
+| Interceptores MySQL / MongoDB / Redis | ✅ na lib | `node/index.ts:9-15` (`wrapMysqlPool`/`wrapMongoClient`/`wrapRedisClient`) |
 | Interceptor de console / log | ✅ na lib | `node/index.ts:16` (`createLogInterceptor`/`wrapConsole`) |
+| `RequestTracer` (rastreio de requisição) | ✅ na lib | `node/index.ts:7` |
+| Transporte: `batch-sender` (envio em lote) + `circuit-breaker` (proteção do endpoint de ingestão) | ✅ na lib | `packages/sdk/src/shared/batch-sender.ts`, `circuit-breaker.ts` |
 
 **Caveat decisivo do SDK Node:** o `SdkEventCollector` **carimba todo evento como `source: 'sdk'`** (`packages/sdk/src/node/event-collector.ts:25-32`) e o middleware emite `type: 'request-start'/'request-end'` **sem corpo** (`express-middleware.ts:119-141`). Ou seja, **mesmo o middleware do SDK não alimenta o `field-extractor`** (que exige `source:'network'` + `type:'request'/'response'` + `body`). O SDK serve para timeline/correlação, **não** para extração de campos.
 
@@ -71,16 +73,40 @@ O Probe **sabe** capturar corpo de requisição/resposta e SQL (✅ nas libs). O
 
 ---
 
-## 4. Servidor — ingestão e derivações
+## 4. Servidor — rotas REST (sessões, eventos, derivações, relatório, métricas)
+
+### 4.1 Sessões — CRUD
 
 | Capacidade | Status | Evidência |
 |---|---|---|
-| Ingestão de eventos em lote (`POST /api/sessions/:id/events`, ≤1000, cap 256KB/evento) | ✅ | `server/src/routes/events.ts:48-86` |
+| Criar sessão (`POST /api/sessions`) — nome/config/tags + folding de `projectId`/`externalSessionId`/`metadata` em tags `sentinel:`/`ext:`/`meta:` (gancho Sentinel) | ✅ | `server/src/routes/sessions.ts:48-77` |
+| Listar sessões paginadas + filtro status/search (`GET /api/sessions`) | ✅ | `server/src/routes/sessions.ts:79-91` |
+| Detalhe da sessão (`GET /api/sessions/:id`) | ✅ | `server/src/routes/sessions.ts:93-106` |
+| Deletar sessão (`DELETE /api/sessions/:id`) — com log de auditoria | ✅ | `server/src/routes/sessions.ts:108-123` |
+| Atualizar status (`PATCH /api/sessions/:id/status`) — idle/capturing/paused/completed/error | ✅ | `server/src/routes/sessions.ts:125-150` |
+| Validação anti-path-traversal do `sessionId` (`/^[\w-]+$/`, ≤128) | ✅ | `server/src/routes/sessions.ts:19` |
+
+### 4.2 Eventos e derivações
+
+| Capacidade | Status | Evidência |
+|---|---|---|
+| Ingestão de eventos em lote (`POST /api/sessions/:id/events`, ≤1000, cap 256KB/evento, early-reject por Content-Length) | ✅ | `server/src/routes/events.ts:48-86` |
 | Query de eventos com filtros + paginação | ✅ | `server/src/routes/events.ts:88-110` |
-| Timeline correlacionada | ✅ | `server/src/routes/events.ts:112-126` |
-| Grupos de correlação | ✅ | `server/src/routes/events.ts:215-229` |
-| **`observed-fields`** — campos top-level por entidade (p/ FieldDeathDetector do Sentinel) | 🟡 funciona, mas **cego no easynup** | `server/src/routes/events.ts:137-172` + `server/src/services/field-extractor.ts` |
-| **`runtime-hits`** — contagem de rotas canônicas `:id` (p/ TripleOrphanDetector) | 🟡 funciona, mas **cego no easynup** | `server/src/routes/events.ts:181-213` + `server/src/services/route-aggregator.ts` |
+| Timeline correlacionada (`GET /api/sessions/:id/timeline`) | ✅ | `server/src/routes/events.ts:112-126` |
+| Grupos de correlação (`GET /api/sessions/:id/groups`) | ✅ | `server/src/routes/events.ts:215-229` |
+| **`observed-fields`** (`GET /api/sessions/:id/observed-fields`) — campos top-level por entidade (p/ FieldDeathDetector do Sentinel); janela opcional `fromTime`/`toTime`, cap 50k eventos | 🟡 funciona, mas **cego no easynup** | `server/src/routes/events.ts:137-172` + `server/src/services/field-extractor.ts:104-106` |
+| **`runtime-hits`** (`GET /api/sessions/:id/runtime-hits`) — contagem de rotas canônicas `:id` (p/ TripleOrphanDetector); janela opcional, cap 50k | 🟡 funciona, mas **cego no easynup** | `server/src/routes/events.ts:181-213` + `server/src/services/route-aggregator.ts:84-86` |
+
+> Agregação **por sessão** apenas — a agregação cross-sessão é deliberadamente deixada para o orquestrador (Sentinel), para não acoplar o Probe ao modelo de projeto do Sentinel (`events.ts:133-136`, `:178-180`).
+
+### 4.3 Relatório e métricas
+
+| Capacidade | Status | Evidência |
+|---|---|---|
+| Relatório da sessão (`GET /api/sessions/:id/report?format=html\|json\|markdown`) — opções `includeScreenshots`/`includeRequestBodies`/`maxEventsPerGroup` (cap 1000); usa o pacote `reporter` via import dinâmico | ✅ | `server/src/routes/reports.ts:18-68` |
+| Métricas Prometheus (`GET /metrics`) — montado **antes** da auth (scrapers não carregam token) | ✅ | `server/src/routes/metrics.ts:11-19` + `server/src/index.ts:107` |
+| Health check (`GET /health`) — status storage + snapshot de métricas (sessões/ws/correlators/erro%) + pool stats; 503 se storage degradado | ✅ | `server/src/index.ts:110-138` |
+| Readiness (`GET /ready`) — 503 se storage indisponível | ✅ | `server/src/index.ts:139-146` |
 
 **Por que `observed-fields`/`runtime-hits` ficam 🟡 (vazios) no easynup:**
 
@@ -88,6 +114,38 @@ O Probe **sabe** capturar corpo de requisição/resposta e SQL (✅ nas libs). O
 - `route-aggregator` exige `ev.source === 'network'` E `type === 'request'` (`route-aggregator.ts:84-86`). O easynup manda `source:'sdk'`/`'browser'` → idem, 0 contado.
 
 A **lib** está correta e tem cobertura (`extractObservedFields`/`extractRuntimeHits` são funções puras testadas). O furo é de **integração**: emissor errado + corpo não enviado + `probe.enabled=false` default.
+
+---
+
+## 4-bis. Servidor — segurança, hardening e operação
+
+| Capacidade | Status | Evidência |
+|---|---|---|
+| Autenticação por API key (compare em tempo constante) **ou** JWT HS256 (verify constant-time); modo `enableAuth` | ✅ | `server/src/middleware/auth.ts:44-50`, `:109-124` + `server/src/index.ts:188-212` |
+| Guardas de boot fail-fast — `PROBE_AUTH_DISABLED=1` proibido em produção; produção exige key ou JWT; key ≥16 chars; JWT secret ≥32 chars | ✅ | `server/src/index.ts:193-209` |
+| Rate limiting token-bucket com 2 tiers (leitura 200/s burst 500 · escrita 50/s burst 100) | ✅ | `server/src/middleware/rate-limiter.ts:30-35` + `server/src/index.ts:178-186` |
+| CORS restrito a `CORS_ORIGINS` (rejeita cross-origin em produção sem origens configuradas) | ✅ | `server/src/index.ts:166-173` |
+| Helmet + CSP estrita (`defaultSrc 'self'`, `objectSrc 'none'`, `frameAncestors 'none'`) | ✅ | `server/src/index.ts:149-164` |
+| Limite de corpo JSON (10 MB, `strict`) | ✅ | `server/src/index.ts:174` |
+| Request logger (pino) + log de auditoria em create/delete/status de sessão | ✅ | `server/src/middleware/request-logger.ts` + `server/src/routes/sessions.ts:75,121,148` |
+| Error handler central + `notFoundHandler` para `/api/*` | ✅ | `server/src/middleware/error-handler.ts` + `server/src/index.ts:236-237` |
+| `asyncHandler` (captura rejeições de handlers async) | ✅ | `server/src/middleware/async-handler.ts` |
+| Validação de env via Zod no boot (porta, storage, secrets, webhook) | ✅ | `server/src/index.ts:39-57` |
+| Graceful shutdown (drena WS + storage, timeout 30s) + safety nets `unhandledRejection`/`uncaughtException` | ✅ | `server/src/index.ts:257-328` |
+| SPA fallback — serve dashboard estático em produção quando `dashboard/dist` existe | ✅ | `server/src/index.ts:223-233` |
+
+## 4-ter. Servidor — storage, métricas internas e recuperação de webhook
+
+| Capacidade | Status | Evidência |
+|---|---|---|
+| Storage plugável via factory — `memory` / `file` / `postgres` (Postgres se `DATABASE_URL`) | ✅ na lib | `packages/core/src/storage/index.ts:16-30` + `server/src/index.ts:60-78` |
+| Circuit breaker de Postgres + detecção de erro transitório | ✅ na lib | `packages/core/src/storage/index.ts:7` (`StorageCircuitBreaker`/`isTransientError`) |
+| Storage instrumentado (duração/contagem/erros por operação) | ✅ | `server/src/lib/instrumented-storage.ts` + `server/src/index.ts:73` |
+| Coleta de pool stats do Postgres (gauges de conexões/waiting/circuit-breaker) | ✅ | `server/src/index.ts:75-77` + `server/src/lib/metrics.ts:153-177` |
+| ~30 métricas Prometheus (HTTP, sessões, eventos, correlator, storage, pool PG, WebSocket) | ✅ | `server/src/lib/metrics.ts:21-217` |
+| Persistência de entregas de webhook em Postgres (`PostgresWebhookEventStore`) quando há DB + webhook configurado | ✅ | `server/src/index.ts:84-93` |
+| **Recuperação de webhooks pendentes/falhos no boot** (resume escalonado pós-restart) | ✅ | `server/src/index.ts:247-255`, `:296-317` |
+| Fábrica de notificação (`buildNotificationPort`) com store opcional | ✅ | `server/src/lib/notification-factory.ts` + `server/src/index.ts:95-102` |
 
 ---
 
@@ -108,11 +166,31 @@ A **lib** está correta e tem cobertura (`extractObservedFields`/`extractRuntime
 |---|---|---|
 | Log Collector — adapters file / docker / stdout + parser | ✅ na lib | `packages/log-collector/src/adapters/`, `src/parser/log-parser.ts` |
 | Reporter — HTML / JSON / Markdown | ✅ na lib | `packages/reporter/src/adapters/` |
-| Browser Agent (Playwright) | ✅ na lib | `packages/browser-agent/src/` |
-| CLI — `capture` / `watch` / `report` / `replay` | ✅ | `packages/cli/src/index.ts:7-10` |
-| Dashboard React (overview, sessions, traces, logs, errors) | ✅ | `dashboard/src/` |
-| WebSocket em tempo real (subscribe por sessão) | ✅ | `server/src/ws/realtime.ts` |
-| Notificação/webhook (retry/DLQ/SSRF/HMAC) | ✅ na lib | `packages/core/src/notification/` (export `core/src/index.ts:19`) |
+| Browser Agent (Playwright) + blocklist de `evaluate` | ✅ na lib | `packages/browser-agent/src/adapters/playwright.adapter.ts` + teste `evaluate-blocklist.test.ts` |
+| CLI — `capture` / `watch` / `report` / `replay` (commander + `.proberc.json`) | ✅ | `packages/cli/src/index.ts:21-24` + `packages/cli/src/commands/` |
+| Dashboard React (overview, sessions, session-detail, traces, logs, errors, settings) | ✅ | `dashboard/src/pages/` |
+| WebSocket em tempo real (subscribe por sessão, auth, cap de assinaturas) | ✅ | `server/src/ws/realtime.ts` + testes `subscription-cap.test.ts` |
+
+### 6.1 Notificação / webhook (pacote `core`)
+
+| Capacidade | Status | Evidência |
+|---|---|---|
+| `WebhookNotificationAdapter` — entrega com retry (schedule fixo) + máx. tentativas + timeout | ✅ na lib | `packages/core/src/notification/webhook.adapter.ts` (`WEBHOOK_MAX_RETRIES`/`WEBHOOK_RETRY_SCHEDULE_MS`/`WEBHOOK_TIMEOUT_MS`) |
+| Assinatura HMAC do payload + cálculo de delay de retry | ✅ na lib | `packages/core/src/notification/webhook-signing.ts` (`signPayload`/`computeRetryDelay`) |
+| Guarda SSRF (bloqueia URL interna / IPv4 privado) | ✅ na lib | `packages/core/src/notification/ssrf-guard.ts` (`isInternalUrl`/`isPrivateIPv4`) |
+| Store de eventos (DLQ / pendentes) — in-memory **ou** Postgres (sobrevive a restart) | ✅ na lib | `webhook-event-store.ts` (`InMemoryWebhookEventStore`) + `postgres-webhook-event-store.ts` |
+| `NoopNotificationAdapter` (quando webhook não configurado) | ✅ na lib | `packages/core/src/notification/notification.port.ts` |
+
+### 6.2 Núcleo compartilhado (pacote `core`)
+
+| Capacidade | Status | Evidência |
+|---|---|---|
+| `EventBus` (pub/sub interno com caps) | ✅ na lib | `packages/core/src/events/event-bus.ts` |
+| Redação de dados sensíveis (`isSensitiveKey`/`redactHeaders`/`redactBody`/`maskValue`) — usada pelos interceptores | ✅ na lib | `packages/core/src/utils/redact.ts` |
+| Trace context W3C (`parseTraceparent`/`formatTraceparent`/`createTraceContext`/child spans) | ✅ na lib | `packages/core/src/utils/trace-context.ts` |
+| `RingBuffer` (buffer circular com limite) | ✅ na lib | `packages/core/src/utils/ring-buffer.ts` |
+| Geradores de id (session/correlation/request/span/trace) + timestamps | ✅ na lib | `packages/core/src/utils/id-generator.ts`, `timestamp.ts` |
+| Ports hexagonais (storage/correlator/log-source/network-capture/reporter/browser-agent) | ✅ na lib | `packages/core/src/ports/` |
 
 ---
 
