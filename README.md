@@ -1,5 +1,26 @@
 # NuP Sentinel Probe
 
+> # ⚠️ APOSENTADO / DEPRECATED — não use em novos projetos
+>
+> Este backend de telemetria **caseiro** foi **aposentado**. A plataforma
+> migrou para **OpenTelemetry** padrão, atrás de porta hexagonal:
+>
+> - **Produção de telemetria (easynup):** porta `ObservabilityPort` +
+>   adapter OTel + auto-instrumentação OTel (`--import`). Os emissores do
+>   Probe foram removidos (commit `296d65beb`).
+> - **Consumo (nup-sentinel):** o `trace-oracle` lê traços via **Jaeger/OTel**;
+>   o adapter legado `DebugProbeTraceAdapter` foi removido (PR #217).
+>
+> **Decisão:** [easynup `ADR-073` r2](https://github.com/nuptechs/EasyNuP) —
+> "don't build your own observability backend" — e
+> [nup-sentinel `ADR-0014` D3](https://github.com/nuptechs/nup-sentinel/blob/main/docs/adr/0014-organismo-operado-apice-code-intel-observabilidade.md).
+>
+> O código aqui fica só como **referência histórica** (repositório arquivado).
+> As peças únicas — captura de sessão rrweb, correlation engine — já vivem no
+> caminho vivo do Sentinel + no substrato OTel.
+
+---
+
 [![CI](https://github.com/nuptechs/nup-sentinel-probe/actions/workflows/ci.yml/badge.svg)](https://github.com/nuptechs/nup-sentinel-probe/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-5.7%2B-blue)](https://www.typescriptlang.org)
