@@ -3,7 +3,7 @@
 # ============================================================
 
 # Stage 1: Install and build
-FROM node:25-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json turbo.json tsconfig.base.json ./
@@ -30,7 +30,7 @@ COPY dashboard/ dashboard/
 RUN npx turbo run build
 
 # Stage 2: Production image
-FROM node:25-alpine AS production
+FROM node:26-alpine AS production
 
 WORKDIR /app
 
